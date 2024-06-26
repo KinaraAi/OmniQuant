@@ -31,8 +31,8 @@ class QuantLinear(nn.Module):
         self.in_features = org_module.in_features
         self.out_features = org_module.out_features
         # de-activate the quantized forward default
-        self.use_weight_quant = False
-        self.use_act_quant = False
+        self.use_weight_quant = True
+        self.use_act_quant = True
         # initialize quantizer
         self.weight_quantizer = UniformAffineQuantizer(**weight_quant_params,shape=org_module.weight.shape)
         if not disable_input_quant:

@@ -45,28 +45,43 @@ def smooth_fc_fc_temporary(fc1, fc2, scales,shifts=None):
     # only support for v_proj and out_proh now.
     fc1.use_temporary_parameter = True
     fc2.use_temporary_parameter = True
-    if hasattr(fc1, 'temp_weight'):
-        fc1.temp_bias = fc1.temp_bias - shifts
-        fc1.temp_bias = fc1.temp_bias/scales.view(-1)
-        fc1.temp_weight = fc1.temp_weight/scales.view(-1,1)
-    else:
-        fc1.temp_bias = fc1.bias/scales.view(-1)
-        fc1.temp_weight = fc1.weight/scales.view(-1,1)
-    
-    if hasattr(fc2, 'bias') and fc2.bias is not None:
-        fc2.temp_bias = fc2.bias + fc2.weight@shifts
-    else:
+    if fc1.out_features != fc2.out_features:
+        fc1.temp_weight = fc1.temp_weight
+        fc1.temp_bias = fc1.temp_bias
         fc2.temp_bias = fc2.weight@shifts
-    fc2.temp_weight = fc2.weight * scales.view(1,-1)
+        fc2.temp_weight = fc2.weight 
+    else:  
+        if hasattr(fc1, 'temp_weight'):
+            fc1.temp_bias = fc1.temp_bias - shifts
+            fc1.temp_bias = fc1.temp_bias/scales.view(-1)
+            fc1.temp_weight = fc1.temp_weight/scales.view(-1,1)
+        else:
+            fc1.temp_bias = fc1.bias/scales.view(-1)
+            fc1.temp_weight = fc1.weight/scales.view(-1,1)
+        
+        if hasattr(fc2, 'bias') and fc2.bias is not None:
+            fc2.temp_bias = fc2.bias + fc2.weight@shifts
+        else:
+            fc2.temp_bias = fc2.weight@shifts
+        fc2.temp_weight = fc2.weight * scales.view(1,-1)
 
 
 def smooth_q_k_temporary(q_proj, k_proj, scales):
     q_proj.use_temporary_parameter = True
     k_proj.use_temporary_parameter = True
-    q_proj.temp_weight = q_proj.temp_weight/scales.view(-1,1)
-    q_proj.temp_bias = q_proj.temp_bias/scales.view(-1)
+    # q_proj.temp_weight = q_proj.temp_weight/scales.view(-1,1)
+    # q_proj.temp_bias = q_proj.temp_bias/scales.view(-1)
     k_proj.temp_weight = k_proj.temp_weight*scales.view(-1,1)
     k_proj.temp_bias = k_proj.temp_bias*scales.view(-1)
+    # Support for GQA
+    if q_proj.out_features > k_proj.out_features:
+        final_shape = max(k_proj.out_features, q_proj.out_features)
+        q_proj.temp_weight = q_proj.temp_weight/scales.repeat(final_shape // scales.shape[0]).view(-1,1)
+        q_proj.temp_bias = q_proj.temp_bias/scales.repeat(final_shape // scales.shape[0]).view(-1)
+    else:
+        q_proj.temp_weight = q_proj.temp_weight/scales.view(-1,1)
+        q_proj.temp_bias = q_proj.temp_bias/scales.view(-1)
+
 
 def smooth_ln_fcs_inplace(ln, fcs, scales,shifts):
     ln.use_temporary_parameter = False
@@ -94,21 +109,38 @@ def smooth_fc_fc_inplace(fc1, fc2, scales,shifts=None):
     # only support for v_proj and out_proh now.
     fc1.use_temporary_parameter = False
     fc2.use_temporary_parameter = False
-    fc1.bias.sub_(shifts)
-    fc1.bias.div_(scales.view(-1))
-    fc1.weight.div_(scales.view(-1,1))
-    
-    if hasattr(fc2, 'bias') and fc2.bias is not None:
-        fc2.bias.add_(fc2.weight@shifts)
+    if fc1.out_features != fc2.out_features:
+        fc1.weight = fc1.weight
+        fc1.bias = fc1.bias
+        fc2.weight = fc2.weight
+        if hasattr(fc2, 'bias') and fc2.bias is not None:
+            fc2.bias = fc2.bias
+        else:
+            del fc2.bias
+            fc2.register_buffer('bias',fc2.weight@shifts) # Shifts are zero for llama models
     else:
-        del fc2.bias
-        fc2.register_buffer('bias',fc2.weight@shifts)
-    fc2.weight.mul_(scales.view(1,-1))
+        fc1.bias.sub_(shifts)
+        fc1.bias.div_(scales.view(-1))
+        fc1.weight.div_(scales.view(-1,1))
+        if hasattr(fc2, 'bias') and fc2.bias is not None:
+            fc2.bias.add_(fc2.weight@shifts)
+        else:
+            del fc2.bias
+            fc2.register_buffer('bias',fc2.weight@shifts)
+        fc2.weight.mul_(scales.view(1,-1))
 
 def smooth_q_k_inplace(q_proj, k_proj, scales,):
     q_proj.use_temporary_parameter = False
     k_proj.use_temporary_parameter = False
-    q_proj.weight.div_(scales.view(-1,1))
-    q_proj.bias.div_(scales.view(-1))
+    # q_proj.weight.div_(scales.view(-1,1))
+    # q_proj.bias.div_(scales.view(-1))
     k_proj.weight.mul_(scales.view(-1,1))
     k_proj.bias.mul_(scales.view(-1))
+    # Support for GQA
+    if q_proj.out_features > k_proj.out_features:
+        final_shape = max(k_proj.out_features, q_proj.out_features)
+        q_proj.weight.div_(scales.repeat(final_shape // scales.shape[0]).view(-1,1))
+        q_proj.bias.div_(scales.repeat(final_shape // scales.shape[0]).view(-1))
+    else:
+        q_proj.weight.div_(scales.view(-1,1))
+        q_proj.bias.div_(scales.view(-1))

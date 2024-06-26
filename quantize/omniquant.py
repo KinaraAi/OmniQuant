@@ -66,6 +66,8 @@ def omniquant(
             "o_proj":"out",
             "up_proj":"fc1"
         }
+        if args.smooth_down_proj:
+            pairs["down_proj"] = "fc2"
         layer_name_prefix = "model.layers"
     elif "opt" in args.net.lower():
         layers = model.model.decoder.layers
@@ -187,8 +189,14 @@ def omniquant(
     else:
         omni_parameters = {}
 
-    
-    
+    import json
+    import pandas as pd
+    quant_strategy = None
+    args.quant_strategy = None
+    if args.quant_path is not None:
+        df = pd.read_csv(args.quant_path, index_col="layer")
+        quant_strategy = json.loads(df.to_json(orient="index"))
+        
     for i in range(len(layers)):
         logger.info(f"=== Start quantize layer {i} ===")
         layer = layers[i].to(dev)
@@ -200,6 +208,20 @@ def omniquant(
                     quantlinear = QuantLinear(module, args.weight_quant_params, args.act_quant_params)
                     add_new_module(name, qlayer, quantlinear)    
         else:
+            # if 22 <= i <= 27:
+            #     args.weight_quant_params["n_bits"] = 3
+            #     args.weight_quant_params["group_size"] = 64
+            #     if args.act_groups: args.act_quant_params["group_size"] = 64
+            # else:
+            #     args.weight_quant_params["n_bits"] = 3
+            #     args.weight_quant_params["group_size"] = 64
+            #     if args.act_groups: args.act_quant_params["group_size"] = 64
+            if quant_strategy is not None:
+                print(quant_strategy[str(i)])
+                args.quant_strategy = quant_strategy[str(i)]
+            else:
+                print(args.weight_quant_params)
+                print(args.act_quant_params)
             qlayer = DecoderLayer(lm.model.config, layer, args)
         qlayer = qlayer.to(dev)
 
@@ -221,7 +243,8 @@ def omniquant(
             use_shift = False                   # deactivate channel-wise shifting for llama model and weight-only quantization
         if args.let:
             # init channel-wise scaling and shift
-            qlayer.register_parameter("qkt_smooth_scale",torch.nn.Parameter(torch.ones(layer.self_attn.q_proj.out_features,device=dev, dtype=dtype)))
+            # qkt_smooth_scale init based on k_proj out_features as k_proj will have less out_features in GQA
+            qlayer.register_parameter("qkt_smooth_scale",torch.nn.Parameter(torch.ones(layer.self_attn.k_proj.out_features,device=dev, dtype=dtype)))
             for name,module in qlayer.named_modules():
                 if isinstance(module, QuantLinear):
                     for key in pairs.keys():
@@ -280,8 +303,8 @@ def omniquant(
         if args.epochs>0:
             # update input of quantization model
             with torch.no_grad():
-                # with torch.cuda.amp.autocast():
-                with traincast():
+                with torch.cuda.amp.autocast():
+                # with traincast():
                     for j in range(args.nsamples):
                         quant_inps[j] = qlayer(quant_inps[j].unsqueeze(0), attention_mask=attention_mask,position_ids=position_ids)[0]
             register_scales_and_zeros(qlayer)

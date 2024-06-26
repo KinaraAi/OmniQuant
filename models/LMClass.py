@@ -24,9 +24,9 @@ class LMClass(BaseLM):
             args.model, attn_implementation=args.attn_implementation
         )
 
-        self.tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False,legacy=False)
+        self.tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False,legacy=False, trust_remote_code=True)
         # self.model = AutoModelForCausalLM.from_pretrained(args.model, config=config, device_map='cpu',torch_dtype=config.torch_dtype)
-        self.model = AutoModelForCausalLM.from_pretrained(args.model, config=config, device_map='cpu',torch_dtype=torch.float16)
+        self.model = AutoModelForCausalLM.from_pretrained(args.model, config=config, device_map='cpu',torch_dtype=torch.float16, trust_remote_code=True)
         self.seqlen = self.model.config.max_position_embeddings
         self.model.eval()
         self.vocab_size = self.tokenizer.vocab_size

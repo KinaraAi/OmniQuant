@@ -97,8 +97,9 @@ class UniformAffineQuantizer(nn.Module):
             x = torch.cat((x,pad_zeros),dim=1)
         
         if self.group_size:
-            assert len(x.shape)==2, "only support linear layer now"
-            dim1, dim2 = x.shape
+            # assert len(x.shape)==2, "only support linear layer now"
+            # dim1, dim2 = x.shape
+            shape = x.shape
             x = x.reshape(-1, self.group_size)
         x_int = round_ste(x / scale)
         if round_zero_point is not None:
@@ -109,7 +110,8 @@ class UniformAffineQuantizer(nn.Module):
             x_dequant = x_dequant.sub(round_zero_point)
         x_dequant = x_dequant.mul(scale)
         if self.group_size:
-            x_dequant = x_dequant.reshape(dim1, dim2)
+            # x_dequant = x_dequant.reshape(dim1, dim2)
+            x_dequant = x_dequant.reshape(shape)
         if self.deficiency > 0:
             x_dequant = x_dequant[:,:-self.deficiency]
         return x_dequant
@@ -157,7 +159,37 @@ class UniformAffineQuantizer(nn.Module):
             self.round_zero_point = None
         else:
             self.round_zero_point = zero_point.clamp(min=-1e4, max=1e4).round()
-        
+    
+    def per_token_dynamic_calibration_pow2(self, x):
+        if self.group_size:
+            if self.deficiency == 0:
+                x = x.reshape(-1,self.group_size)
+            else:
+                pad_zeros = torch.zeros((x.shape[0],self.deficiency),dtype=x.dtype,device=x.device)
+                x = torch.cat((x,pad_zeros),dim=1)
+                x = x.reshape(-1,self.group_size)
+        reduce_shape = [-1]
+        xmin = x.amin(reduce_shape, keepdim=True)
+        xmax =  x.amax(reduce_shape, keepdim=True)
+        if self.lwc:
+            xmax = self.sigmoid(self.upbound_factor)*xmax
+            xmin = self.sigmoid(self.lowbound_factor)*xmin
+        # if self.symmetric:
+        pow2 = True
+        if pow2 :
+            abs_max = torch.max(xmax.abs(),xmin.abs())
+            abs_max = abs_max + 1.22443e-15
+            intPart = torch.floor(torch.log2(abs_max)) + torch.ones_like(abs_max)
+            fracPart = (self.n_bits-1)*torch.ones_like(intPart) - intPart
+            scale = (2**fracPart)
+            scale = scale.pow(-1)
+            self.scale = scale.clamp(min=CLIPMIN, max=1e6)
+            zero_point = (2**(self.n_bits-1)-1)*torch.zeros_like(self.scale)
+        if self.disable_zero_point:
+            self.round_zero_point = None
+        else:
+            self.round_zero_point = zero_point.clamp(min=-1e4, max=1e4).round()
+            
     def register_scales_and_zeros(self):
         self.register_buffer('scales', self.scale)
         self.register_buffer('zeros', self.round_zero_point)

@@ -30,14 +30,29 @@ class QuantLlamaMLP(nn.Module):
         # self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
         # self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
         # self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
+        gate_proj_weight_quant_params = args.weight_quant_params
+        if args.quant_strategy is not None:
+            gate_proj_weight_quant_params["n_bits"] = args.quant_strategy["gate_proj-n_bits"]
+            gate_proj_weight_quant_params["group_size"] = args.quant_strategy["gate_proj-group_size"]
+            
+        down_proj_weight_quant_params = args.weight_quant_params
+        if args.quant_strategy is not None:
+            down_proj_weight_quant_params["n_bits"] = args.quant_strategy["down_proj-n_bits"]
+            down_proj_weight_quant_params["group_size"] = args.quant_strategy["down_proj-group_size"]
+            
+        up_proj_weight_quant_params = args.weight_quant_params
+        if args.quant_strategy is not None:
+            up_proj_weight_quant_params["n_bits"] = args.quant_strategy["up_proj-n_bits"]
+            up_proj_weight_quant_params["group_size"] = args.quant_strategy["up_proj-group_size"]
+            
         self.gate_proj = QuantLinear(org_module.gate_proj,
-                                           args.weight_quant_params,
+                                           gate_proj_weight_quant_params,
                                            args.act_quant_params)
         self.down_proj = QuantLinear(org_module.down_proj,
-                                           args.weight_quant_params,
+                                           down_proj_weight_quant_params,
                                            args.act_quant_params)
         self.up_proj = QuantLinear(org_module.up_proj,
-                                           args.weight_quant_params,
+                                           up_proj_weight_quant_params,
                                            args.act_quant_params)
         self.act_fn = ACT2FN[hidden_act]
 
@@ -69,23 +84,43 @@ class QuantLlamaAttention(nn.Module):
 
         self.rotary_emb = copy.deepcopy(org_module.rotary_emb)
 
+        k_proj_weight_quant_params = args.weight_quant_params
+        if args.quant_strategy is not None:
+            k_proj_weight_quant_params["n_bits"] = args.quant_strategy["k_proj-n_bits"]
+            k_proj_weight_quant_params["group_size"] = args.quant_strategy["k_proj-group_size"]
+            
+        v_proj_weight_quant_params = args.weight_quant_params
+        if args.quant_strategy is not None:
+            v_proj_weight_quant_params["n_bits"] = args.quant_strategy["v_proj-n_bits"]
+            v_proj_weight_quant_params["group_size"] = args.quant_strategy["v_proj-group_size"]
+            
+        q_proj_weight_quant_params = args.weight_quant_params
+        if args.quant_strategy is not None:
+            q_proj_weight_quant_params["n_bits"] = args.quant_strategy["q_proj-n_bits"]
+            q_proj_weight_quant_params["group_size"] = args.quant_strategy["q_proj-group_size"]
+            
+        o_proj_weight_quant_params = args.weight_quant_params
+        if args.quant_strategy is not None:
+            o_proj_weight_quant_params["n_bits"] = args.quant_strategy["o_proj-n_bits"]
+            o_proj_weight_quant_params["group_size"] = args.quant_strategy["o_proj-group_size"]
+            
         self.k_proj = QuantLinear(
             org_module.k_proj,
-            args.weight_quant_params,
+            k_proj_weight_quant_params,
             args.act_quant_params,
         )
         self.v_proj = QuantLinear(
             org_module.v_proj,
-            args.weight_quant_params,
+            v_proj_weight_quant_params,
             args.act_quant_params,
         )
         self.q_proj = QuantLinear(
             org_module.q_proj,
-            args.weight_quant_params,
+            q_proj_weight_quant_params,
             args.act_quant_params,
         )
         self.o_proj = QuantLinear(
-            org_module.o_proj, args.weight_quant_params, args.act_quant_params
+            org_module.o_proj, o_proj_weight_quant_params, args.act_quant_params
         )
         self.qkt_matmul = QuantMatMul(
             args.q_quant_params, args.k_quant_params, matmul_func=torch.matmul
@@ -119,7 +154,7 @@ class QuantLlamaAttention(nn.Module):
         value_states = self.v_proj(hidden_states).view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
         kv_seq_len = key_states.shape[-2]
-        if past_key_value is not None:
+        if past_key_value is not None and len(past_key_value) > 0:
             kv_seq_len += past_key_value[0].shape[-2]
         cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
@@ -127,7 +162,7 @@ class QuantLlamaAttention(nn.Module):
 
         # [bsz, nh, t, hd]
 
-        if past_key_value is not None:
+        if past_key_value is not None and len(past_key_value) > 0:
             # reuse k, v, self_attention
             key_states = torch.cat([past_key_value[0], key_states], dim=2)
             value_states = torch.cat([past_key_value[1], value_states], dim=2)
