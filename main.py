@@ -234,7 +234,7 @@ def main():
     parser.add_argument("--act-shifts", type=str, default=None)
     parser.add_argument("--smooth_down_proj",default=False, action="store_true", help="smooth down projection")
     parser.add_argument("--act_groups", action="store_true")
-    parser.add_argument("--quant_strategy", default=None, type=str, help="strategy for quantization")
+    parser.add_argument("--quant_strategy_path", default=None, type=str, help="strategy for quantization")
     parser.add_argument("--onnx_dump_dir", type=str, default=".", help="Directory path to dump onnx model")
     parser.add_argument("--sequence_length", type=int, default=256)
 

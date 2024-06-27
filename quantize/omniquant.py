@@ -193,8 +193,8 @@ def omniquant(
     import pandas as pd
     quant_strategy = None
     args.quant_strategy = None
-    if args.quant_path is not None:
-        df = pd.read_csv(args.quant_path, index_col="layer")
+    if args.quant_strategy_path is not None:
+        df = pd.read_csv(args.quant_strategy_path, index_col="layer")
         quant_strategy = json.loads(df.to_json(orient="index"))
         
     for i in range(len(layers)):
