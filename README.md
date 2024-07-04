@@ -102,6 +102,15 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
 --model /PATH/TO/LLaMA/llama-7b  \
 --epochs 20 --output_dir ./log/llama-7b-w3a16g128 \
 --eval_ppl --wbits 3 --abits 16 --group_size 128 --lwc
+
+# W3A16g128 with quant strategy for each layer
+CUDA_VISIBLE_DEVICES=0 python main.py \
+--model /PATH/TO/LLaMA/llama-7b  \
+--epochs 20 --output_dir ./log/llama-7b-w3a16g128 \
+--eval_ppl --wbits 3 --abits 16 --group_size 128 --lwc \
+--quant_strategy_path sample_quant_strategy.csv --save_dir model_save_dir
+
+#If Decoder level changes are needed then provide corresponding bit config in omniquant.py
 ```
 
 3. weight-activation quantization
